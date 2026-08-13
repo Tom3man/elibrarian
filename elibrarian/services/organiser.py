@@ -13,11 +13,12 @@ log = logging.getLogger(__name__)
 
 
 def parse_file_name(file_name: str) -> BookCandidate:
-
     log.debug("Parsing filename: %s", file_name)
+
     parts = [part.strip() for part in file_name.split("--")]
 
     remaining_parts = []
+
     book_candidate = BookCandidate(
         title=None,
         author=None,
@@ -29,12 +30,14 @@ def parse_file_name(file_name: str) -> BookCandidate:
 
     for part in parts:
         isbn10 = extract_isbn10(part)
+
         if isbn10:
             book_candidate.isbn10 = isbn10
             log.debug("Extracted ISBN10: %s", isbn10)
             continue
 
         isbn13 = extract_isbn13(part)
+
         if isbn13:
             book_candidate.isbn13 = isbn13
             log.debug("Extracted ISBN13: %s", isbn13)
@@ -61,26 +64,37 @@ def parse_file_name(file_name: str) -> BookCandidate:
 def build_destination(
     library: Path,
     metadata: OpenLibraryBook,
+    suffix: str,
 ) -> Path:
     author = sanitise_name(metadata.author)
     title = sanitise_name(metadata.title)
+    parts = [f"{author} -- {title}"]
 
     output_folder = library / author / title
-    return output_folder
+
+    if metadata.publish_year:
+        parts.append(str(metadata.publish_year))
+
+    isbn = metadata.isbn13 or metadata.isbn10
+
+    if isbn:
+        parts.append(f"{isbn}")
+
+    file_name = "  --  ".join(parts)
+
+    return output_folder / f"{file_name}{suffix.lower()}"
 
 
 def restructure_file(
     destination_path: Path,
     input_filepath: Path,
 ) -> Path | None:
-    """Organise an ebook using Open Library metadata.
-
-    The function is defensive: on any failure it logs and returns None
-    leaving the original file in place so a watcher can retry later.
+    """
+    Organise an ebook using Open Library metadata.
     """
 
     try:
-        # Parse raw filename
+        # Parse filename
         book_candidate = parse_file_name(input_filepath.name)
         log.info("Candidate: %s", book_candidate)
 
@@ -88,41 +102,60 @@ def restructure_file(
         openlibrary_book = get_openlibrary_book(book_candidate)
 
         if not openlibrary_book:
-            log.info("No Open Library match: %s", input_filepath.name)
+            log.info(
+                "No Open Library match: %s",
+                input_filepath.name,
+            )
             return None
 
-        log.info("Matched: %s", openlibrary_book.title)
-
-        # Build destination structure
-        destination_folder = build_destination(
-            destination_path,
-            openlibrary_book,
+        log.info(
+            "Matched: %s",
+            openlibrary_book.title,
         )
 
-        log.debug("Destination: %s", destination_folder)
+        # Build complete destination path
+        destination_filepath = build_destination(
+            destination_path,
+            openlibrary_book,
+            input_filepath.suffix,
+        )
 
-        # Don't overwrite an existing book folder
-        if destination_folder.exists():
-            log.warning("Destination already exists: %s", destination_folder)
+        log.debug(
+            "Destination: %s",
+            destination_filepath,
+        )
+
+        # Don't overwrite an existing file
+        if destination_filepath.exists():
+            log.warning(
+                "Destination already exists: %s",
+                destination_filepath,
+            )
             return None
 
         # Ensure destination directory exists
-        destination_folder.mkdir(parents=True, exist_ok=True)
+        destination_filepath.parent.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
 
-        # Final destination filepath
-        dest_file = destination_folder / input_filepath.name
+        # Move file
+        shutil.move(
+            str(input_filepath),
+            str(destination_filepath),
+        )
 
-        if dest_file.exists():
-            log.warning("Destination file already exists: %s", dest_file)
-            return None
+        log.info(
+            "Moved %s -> %s",
+            input_filepath,
+            destination_filepath,
+        )
 
-        # Use shutil.move to support moves across filesystems
-        shutil.move(str(input_filepath), str(dest_file))
-        log.info("Moved %s -> %s", input_filepath, dest_file)
-
-        return dest_file
+        return destination_filepath
 
     except Exception:
-        log.exception("Failed to restructure file: %s", input_filepath)
-        # Leave the file in place for later inspection/retry
+        log.exception(
+            "Failed to restructure file: %s",
+            input_filepath,
+        )
         return None
