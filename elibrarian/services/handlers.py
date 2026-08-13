@@ -21,7 +21,6 @@ class WatchHandler(FileSystemEventHandler, ABC):
         interval: float = 2,
         stable_checks: int = 3,
     ) -> bool:
-
         previous = None
         stable_count = 0
 
@@ -42,26 +41,53 @@ class WatchHandler(FileSystemEventHandler, ABC):
 
         return True
 
-    def on_created(self, event):
-        if event.is_directory:
+    def _handle_file(self, filepath: Path) -> None:
+        # Ignore temporary upload files such as Nextcloud's .part files.
+        if filepath.name.endswith(".part"):
+            log.debug("Ignoring temporary file: %s", filepath)
             return
 
-        filepath = Path(event.src_path)
-
+        # Only process files directly inside the inbox.
         if filepath.parent != self.inbox:
             return
 
+        if not self.is_supported(filepath):
+            return
+
         if not self.wait_for_file(filepath):
-            log.warning("File disappeared: %s", filepath)
+            log.warning("File disappeared before processing: %s", filepath)
             return
 
         self.process_file(filepath)
 
+    def on_created(self, event) -> None:
+        if event.is_directory:
+            return
+
+        self._handle_file(Path(event.src_path))
+
+    def on_moved(self, event) -> None:
+        if event.is_directory:
+            return
+
+        filepath = Path(event.dest_path)
+
+        log.info(
+            "File moved: %s -> %s",
+            event.src_path,
+            filepath,
+        )
+
+        self._handle_file(filepath)
+
+    @abstractmethod
+    def is_supported(self, filepath: Path) -> bool:
+        """Return True if the file should be processed."""
+        ...
+
     @abstractmethod
     def process_file(self, filepath: Path) -> None:
-        """
-        Process a newly detected file.
-        """
+        """Process a detected file."""
         ...
 
 
@@ -72,10 +98,10 @@ class EbookHandler(WatchHandler):
         ".mobi",
     }
 
-    def process_file(self, filepath: Path) -> None:
-        if filepath.suffix.lower() not in self.SUPPORTED_EXTENSIONS:
-            return
+    def is_supported(self, filepath: Path) -> bool:
+        return filepath.suffix.lower() in self.SUPPORTED_EXTENSIONS
 
+    def process_file(self, filepath: Path) -> None:
         log.info("New ebook detected: %s", filepath)
 
         restructure_file(
