@@ -7,7 +7,7 @@ Small helper to organise ebooks dropped into a watched folder. It parses filenam
 **Status**: prototype — basic parsing and Open Library lookup implemented. Error handling and logging have been added so files stay in the source folder on failure.
 
 **Requirements**
-- Python 3.10+
+- Python 3.12+
 - See `pyproject.toml` for project metadata. At minimum install:
 
 ```bash
