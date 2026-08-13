@@ -2,12 +2,71 @@ import logging
 import shutil
 from pathlib import Path
 
-from elibrarian.src.openlibrary import get_openlibrary_book
-from elibrarian.src.parser import parse_file_name
-from elibrarian.src.pathing import build_destination
+from elibrarian.models.book import OpenLibraryBook
+from elibrarian.models.candidate import BookCandidate
+from elibrarian.services.openlibrary import get_openlibrary_book
+from elibrarian.utils.isbn import extract_isbn10, extract_isbn13
+from elibrarian.utils.sanitise import sanitise_name
+from elibrarian.utils.year import is_year
 
 log = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO)
+
+
+def parse_file_name(file_name: str) -> BookCandidate:
+
+    log.debug("Parsing filename: %s", file_name)
+    parts = [part.strip() for part in file_name.split("--")]
+
+    remaining_parts = []
+    book_candidate = BookCandidate(
+        title=None,
+        author=None,
+        year=None,
+        publisher=None,
+        isbn10=None,
+        isbn13=None,
+    )
+
+    for part in parts:
+        isbn10 = extract_isbn10(part)
+        if isbn10:
+            book_candidate.isbn10 = isbn10
+            log.debug("Extracted ISBN10: %s", isbn10)
+            continue
+
+        isbn13 = extract_isbn13(part)
+        if isbn13:
+            book_candidate.isbn13 = isbn13
+            log.debug("Extracted ISBN13: %s", isbn13)
+            continue
+
+        if is_year(part):
+            book_candidate.year = str(part)
+            log.debug("Extracted year: %s", book_candidate.year)
+            continue
+
+        remaining_parts.append(part)
+
+    if remaining_parts:
+        book_candidate.title = remaining_parts.pop(0)
+        log.debug("Extracted title: %s", book_candidate.title)
+
+    if remaining_parts:
+        book_candidate.author = remaining_parts.pop(0)
+        log.debug("Extracted author: %s", book_candidate.author)
+
+    return book_candidate
+
+
+def build_destination(
+    library: Path,
+    metadata: OpenLibraryBook,
+) -> Path:
+    author = sanitise_name(metadata.author)
+    title = sanitise_name(metadata.title)
+
+    output_folder = library / author / title
+    return output_folder
 
 
 def restructure_file(
