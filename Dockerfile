@@ -8,10 +8,9 @@ ENV PYTHONUNBUFFERED=1 \
 RUN pip install --no-cache-dir poetry
 
 COPY pyproject.toml poetry.lock README.md ./
+COPY elibrarian ./elibrarian
 
 RUN poetry config virtualenvs.create false \
     && poetry install --only main --no-interaction --no-ansi
-
-COPY elibrarian ./elibrarian
 
 CMD ["elibrarian"]
