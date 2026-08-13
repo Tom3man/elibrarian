@@ -1,4 +1,4 @@
-# elibrarian
+# eLibrarian
 
 Small helper to organise ebooks dropped into a watched folder. It parses filenames, queries Open Library for metadata, builds a destination folder (Author / Title) and moves the file into an ebook folder.
 
